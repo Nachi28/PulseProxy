@@ -75,7 +75,7 @@ private:
                     if (n <= 0) break;
                     ssize_t sent = 0;
                     while (sent < n) {
-                        ssize_t s = ::send(client_fd, buf + sent, static_cast<size_t>(n - sent), 0);
+                        ssize_t s = ::send(client_fd, buf + sent, static_cast<size_t>(n - sent), MSG_NOSIGNAL);
                         if (s <= 0) break;
                         sent += s;
                     }
@@ -161,7 +161,7 @@ PP_TEST(e2e_streaming_checksum_match_5mb) {
         constexpr size_t CHUNK = 32768; // 32 KB chunk
         while (offset < TOTAL_BYTES) {
             size_t to_send = std::min(CHUNK, TOTAL_BYTES - offset);
-            ssize_t n = ::send(client_fd, send_payload.data() + offset, to_send, 0);
+            ssize_t n = ::send(client_fd, send_payload.data() + offset, to_send, MSG_NOSIGNAL);
             PP_EXPECT(n > 0);
             offset += static_cast<size_t>(n);
         }
@@ -218,7 +218,7 @@ PP_TEST(e2e_abrupt_rst_handling) {
 
     // Transmit partial data
     const char msg[] = "ABRUPT_RESET_TEST_PAYLOAD";
-    PP_EXPECT(::send(cfd, msg, sizeof(msg), 0) > 0);
+    PP_EXPECT(::send(cfd, msg, sizeof(msg), MSG_NOSIGNAL) > 0);
 
     // Enable SO_LINGER with timeout 0 -> forces hard RST on close instead of FIN
     struct linger sl{1, 0};
@@ -232,7 +232,7 @@ PP_TEST(e2e_abrupt_rst_handling) {
     int cfd2 = connect_client(PROXY_PORT);
     const char ping[] = "PING";
     char pong[8] = {};
-    PP_EXPECT(::send(cfd2, ping, 4, 0) == 4);
+    PP_EXPECT(::send(cfd2, ping, 4, MSG_NOSIGNAL) == 4);
     PP_EXPECT(::recv(cfd2, pong, 4, 0) == 4);
     PP_EXPECT_EQ(std::memcmp(ping, pong, 4), 0);
     ::close(cfd2);

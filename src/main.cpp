@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
     for (auto& e : engines) g_engines.push_back(e.get());
 
     // Install signal handler.
+    ::signal(SIGPIPE, SIG_IGN);
     struct sigaction sa{};
     sa.sa_handler = signal_handler;
     ::sigaction(SIGINT,  &sa, nullptr);
