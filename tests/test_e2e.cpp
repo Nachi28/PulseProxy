@@ -144,6 +144,7 @@ PP_TEST(e2e_streaming_checksum_match_5mb) {
 
     // 3. Connect client to PulseProxy
     int client_fd = connect_client(PROXY_PORT);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     // 4. Generate random test payload and compute source hash
     std::vector<uint8_t> send_payload(TOTAL_BYTES);

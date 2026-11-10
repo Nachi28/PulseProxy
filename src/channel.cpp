@@ -70,26 +70,38 @@ bool Channel::on_upstream_connected() {
 //     0  — src_fd sent EOF (FIN)
 //    -1  — EAGAIN (src or dst not ready) or hard error (errno set)
 ssize_t Channel::splice_forward(Fd src_fd, Fd pipe_read, Fd pipe_write, Fd dst_fd) {
+    // Flush any pending bytes sitting in pipe from previous partial write
+    ssize_t flushed = ::splice(pipe_read, nullptr, dst_fd, nullptr,
+                               ARENA_BLOCK_SIZE,
+                               SPLICE_F_MOVE | SPLICE_F_NONBLOCK);
+    if (flushed < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        return -1;
+    }
+
     // Phase 1: drain src_fd into the write-end of the pipe.
     ssize_t spliced_in = ::splice(src_fd, nullptr, pipe_write, nullptr,
                                   ARENA_BLOCK_SIZE,
                                   SPLICE_F_MOVE | SPLICE_F_NONBLOCK);
-    if (spliced_in <= 0) return spliced_in; // 0 = EOF, -1 = EAGAIN / error
+    if (spliced_in <= 0) {
+        if (spliced_in < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            return flushed > 0 ? flushed : -1;
+        }
+        return spliced_in; // 0 = EOF, -1 = hard error
+    }
 
     // Phase 2: drain the read-end of the pipe into dst_fd.
     ssize_t spliced_out = ::splice(pipe_read, nullptr, dst_fd, nullptr,
                                    static_cast<std::size_t>(spliced_in),
                                    SPLICE_F_MOVE | SPLICE_F_NONBLOCK);
-    if (spliced_out < 0) {
-        // dst_fd not writable yet — bytes stay in the pipe.
-        return -1; // caller arms EPOLLOUT on dst_fd
-    }
+    ssize_t total = (flushed > 0 ? flushed : 0) + (spliced_out > 0 ? spliced_out : 0);
+    if (total > 0) return total;
     return spliced_out;
 }
 
 // ── EPOLLIN handlers ──────────────────────────────────────────────────────────
 
 bool Channel::on_client_readable(MemoryArena& /*arena*/) {
+    if (state_ == ChannelState::Connecting) return true; // wait for upstream connect
     if (state_ != ChannelState::Active) return false;
 
     // Edge-triggered: drain the socket completely in a tight loop.
@@ -104,13 +116,16 @@ bool Channel::on_client_readable(MemoryArena& /*arena*/) {
             state_ = ChannelState::HalfClosed;
             return true;
         } else {
-            // EAGAIN → socket drained.  EPOLLOUT on upstream_fd_ if pipe has data.
-            return true;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return true;
+            }
+            return false; // socket error
         }
     }
 }
 
 bool Channel::on_upstream_readable(MemoryArena& /*arena*/) {
+    if (state_ == ChannelState::Connecting) return true;
     if (state_ != ChannelState::Active && state_ != ChannelState::HalfClosed)
         return false;
 
@@ -130,7 +145,10 @@ bool Channel::on_upstream_readable(MemoryArena& /*arena*/) {
             }
             return !is_closed();
         } else {
-            return true;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return true;
+            }
+            return false; // socket error
         }
     }
 }
@@ -138,13 +156,17 @@ bool Channel::on_upstream_readable(MemoryArena& /*arena*/) {
 // ── EPOLLOUT handlers (back-pressure drain) ───────────────────────────────────
 
 bool Channel::on_client_writable(MemoryArena& arena) {
+    if (state_ == ChannelState::Connecting) return true;
     // Drain whatever is sitting in pipe_uc_ → client_fd_.
     return on_upstream_readable(arena);
 }
 
 bool Channel::on_upstream_writable(MemoryArena& arena) {
-    if (state_ == ChannelState::Connecting)
-        return on_upstream_connected();
+    if (state_ == ChannelState::Connecting) {
+        if (!on_upstream_connected()) return false;
+        // Upstream is now connected; flush any client data already buffered
+        return on_client_readable(arena);
+    }
     // Drain whatever is sitting in pipe_cu_ → upstream_fd_.
     return on_client_readable(arena);
 }
