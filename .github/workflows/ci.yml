@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    name: ubuntu-latest
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y cmake g++ ncat
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DPP_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Echo proxy smoke test
+        run: bash examples/echo_proxy.sh
+
+      - name: Benchmark smoke test (5 connections, 3 s)
+        run: |
+          ncat -lk 18082 --sh-exec "cat" &
+          sleep 0.2
+          ./build/pulseproxy --listen-port 18083 --upstream-port 18082 --workers 1 --stats-interval 0 &
+          PP=$!
+          sleep 0.3
+          ./build/pp_bench --host 127.0.0.1 --port 18083 --conns 5 --secs 3
+          kill $PP
