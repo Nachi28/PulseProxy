@@ -218,7 +218,7 @@ PP_TEST(e2e_abrupt_rst_handling) {
 
     // Transmit partial data
     const char msg[] = "ABRUPT_RESET_TEST_PAYLOAD";
-    ::send(cfd, msg, sizeof(msg), 0);
+    PP_EXPECT(::send(cfd, msg, sizeof(msg), 0) > 0);
 
     // Enable SO_LINGER with timeout 0 -> forces hard RST on close instead of FIN
     struct linger sl{1, 0};

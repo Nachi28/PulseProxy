@@ -115,7 +115,8 @@ void EpollEngine::run() {
 void EpollEngine::stop() noexcept {
     stop_requested_.store(true, std::memory_order_relaxed);
     uint64_t val = 1;
-    ::write(stop_fd_, &val, sizeof(val)); // wake epoll_wait()
+    ssize_t rc = ::write(stop_fd_, &val, sizeof(val)); // wake epoll_wait()
+    (void)rc;
 }
 
 // ── Event dispatch ────────────────────────────────────────────────────────────

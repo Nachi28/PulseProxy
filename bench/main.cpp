@@ -103,7 +103,8 @@ int main(int argc, char** argv) {
                 if (sent <= 0) break;
                 total_bytes.fetch_add(static_cast<uint64_t>(sent), std::memory_order_relaxed);
                 // Drain responses to avoid buffer bloat.
-                ::recv(fd, recv_buf, sizeof(recv_buf), MSG_DONTWAIT);
+                ssize_t r = ::recv(fd, recv_buf, sizeof(recv_buf), MSG_DONTWAIT);
+                (void)r;
             }
             ::close(fd);
         });
