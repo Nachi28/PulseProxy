@@ -27,10 +27,24 @@ if [ ! -f "$BINARY" ]; then
   exit 1
 fi
 
-# Start a minimal echo backend.
-ncat -lk "$UPSTREAM_PORT" --sh-exec "cat" &
+# Start a minimal echo backend using python3 (reliable, portable across all environments).
+python3 -c '
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", 18081))
+s.listen(1)
+conn, _ = s.accept()
+while True:
+    data = conn.recv(4096)
+    if not data:
+        break
+    conn.sendall(data)
+conn.close()
+s.close()
+' &
 ECHO_PID=$!
-sleep 0.2
+sleep 0.3
 
 # Start PulseProxy (single worker for the demo).
 "$BINARY" --listen-port "$LISTEN_PORT" \
@@ -38,10 +52,19 @@ sleep 0.2
            --workers 1 \
            --stats-interval 0 &
 PP_PID=$!
-sleep 0.3
+sleep 0.5
 
 echo "--- Sending 'Hello PulseProxy!' through the proxy ---"
-RESPONSE=$(echo "Hello PulseProxy!" | ncat 127.0.0.1 "$LISTEN_PORT" -w 2)
+RESPONSE=$(python3 -c '
+import socket
+s = socket.socket()
+s.settimeout(3.0)
+s.connect(("127.0.0.1", 18080))
+s.sendall(b"Hello PulseProxy!\n")
+data = s.recv(1024)
+print(data.decode("utf-8", errors="replace"), end="")
+s.close()
+')
 echo "Response: $RESPONSE"
 
 kill "$PP_PID" "$ECHO_PID" 2>/dev/null
