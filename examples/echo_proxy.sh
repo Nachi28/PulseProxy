@@ -41,7 +41,7 @@ PP_PID=$!
 sleep 0.3
 
 echo "--- Sending 'Hello PulseProxy!' through the proxy ---"
-RESPONSE=$(echo "Hello PulseProxy!" | ncat 127.0.0.1 "$LISTEN_PORT" --recv-only --idle-timeout 1)
+RESPONSE=$(echo "Hello PulseProxy!" | ncat 127.0.0.1 "$LISTEN_PORT" -w 2)
 echo "Response: $RESPONSE"
 
 kill "$PP_PID" "$ECHO_PID" 2>/dev/null
