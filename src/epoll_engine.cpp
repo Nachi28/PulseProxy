@@ -138,6 +138,10 @@ void EpollEngine::dispatch_event(const epoll_event& ev) {
     Channel* ch = decode_channel(ev.data.ptr);
     if (!ch) return;
 
+    // Check if channel was already deregistered/freed by an earlier event in this epoll_wait batch
+    auto it = std::find(active_channels_.begin(), active_channels_.end(), ch);
+    if (it == active_channels_.end()) return;
+
     bool ok = true;
 
     if (ev.events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
@@ -231,6 +235,9 @@ void EpollEngine::register_channel(Channel* ch) {
 }
 
 void EpollEngine::deregister_and_free(Channel* ch) {
+    auto it = std::find(active_channels_.begin(), active_channels_.end(), ch);
+    if (it == active_channels_.end()) return; // Already deregistered by a prior event in this tick
+
     epoll_del(ch->client_fd());
     epoll_del(ch->upstream_fd());
 
@@ -239,11 +246,8 @@ void EpollEngine::deregister_and_free(Channel* ch) {
     if (static_cast<std::size_t>(ch->upstream_fd()) < fd_table_.size())
         fd_table_[ch->upstream_fd()] = nullptr;
 
-    auto it = std::find(active_channels_.begin(), active_channels_.end(), ch);
-    if (it != active_channels_.end()) {
-        std::iter_swap(it, active_channels_.end() - 1);
-        active_channels_.pop_back();
-    }
+    std::iter_swap(it, active_channels_.end() - 1);
+    active_channels_.pop_back();
 
     bytes_proxied_.fetch_add(ch->bytes_to_client() + ch->bytes_to_upstream(),
                              std::memory_order_relaxed);

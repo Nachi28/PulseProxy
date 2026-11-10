@@ -264,6 +264,7 @@ PP_TEST(e2e_idle_timeout_reclamation) {
 
     // Connect client and stay silent
     int cfd = connect_client(PROXY_PORT);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
     PP_EXPECT_EQ(proxy.connections_active(), 1u);
 
     // Sleep past the idle timeout threshold plus sweep period
